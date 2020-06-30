@@ -325,7 +325,7 @@ int git_refdb_should_write_reflog(int *out, git_refdb *db, const git_reference *
 
 int git_refdb_should_write_head_reflog(int *out, git_refdb *db, const git_reference *ref)
 {
-	git_reference *head = NULL, *peeled = NULL;
+	git_reference *head = NULL, *resolved = NULL;
 	const char *name;
 	int error;
 
@@ -343,22 +343,13 @@ int git_refdb_should_write_head_reflog(int *out, git_refdb *db, const git_refere
 		goto out;
 
 	/* Go down the symref chain until we find the branch */
-	while (git_reference_type(head) == GIT_REFERENCE_SYMBOLIC) {
-		if ((error = git_refdb_lookup(&peeled, db, git_reference_symbolic_target(head))) < 0)
-			break;
-
-		git_reference_free(head);
-		head = peeled;
-		peeled = NULL;
-	}
-
-	if (error < 0) {
+	if ((error = git_refdb_resolve(&resolved, db, git_reference_symbolic_target(head), -1)) < 0) {
 		if (error != GIT_ENOTFOUND)
 			goto out;
 		error = 0;
-		name = git_reference_symbolic_target(head);
+		name = git_reference_symbolic_target(resolved ? resolved : head);
 	} else {
-		name = git_reference_name(head);
+		name = git_reference_name(resolved);
 	}
 
 	if (strcmp(name, ref->name))
@@ -367,7 +358,7 @@ int git_refdb_should_write_head_reflog(int *out, git_refdb *db, const git_refere
 	*out = 1;
 
 out:
-	git_reference_free(peeled);
+	git_reference_free(resolved);
 	git_reference_free(head);
 	return error;
 }
