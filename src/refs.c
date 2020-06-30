@@ -27,9 +27,6 @@
 
 bool git_reference__enable_symbolic_ref_target_validation = true;
 
-#define DEFAULT_NESTING_LEVEL	5
-#define MAX_NESTING_LEVEL		10
-
 enum {
 	GIT_PACKREF_HAS_PEEL = 1,
 	GIT_PACKREF_WAS_LOOSE = 2
@@ -1126,40 +1123,6 @@ int git_reference_cmp(
 	return git_oid__cmp(&ref1->target.oid, &ref2->target.oid);
 }
 
-/**
- * Get the end of a chain of references. If the final one is not
- * found, we return the reference just before that.
- */
-static int get_terminal(git_reference **out, git_repository *repo, const char *ref_name, int nesting)
-{
-	git_reference *ref;
-	int error = 0;
-
-	if (nesting > MAX_NESTING_LEVEL) {
-		git_error_set(GIT_ERROR_REFERENCE, "reference chain too deep (%d)", nesting);
-		return GIT_ENOTFOUND;
-	}
-
-	/* set to NULL to let the caller know that they're at the end of the chain */
-	if ((error = git_reference_lookup(&ref, repo, ref_name)) < 0) {
-		*out = NULL;
-		return error;
-	}
-
-	if (git_reference_type(ref) == GIT_REFERENCE_DIRECT) {
-		*out = ref;
-		error = 0;
-	} else {
-		error = get_terminal(out, repo, git_reference_symbolic_target(ref), nesting + 1);
-		if (error == GIT_ENOTFOUND && !*out)
-			*out = ref;
-		else
-			git_reference_free(ref);
-	}
-
-	return error;
-}
-
 /*
  * Starting with the reference given by `ref_name`, follows symbolic
  * references until a direct reference is found and updated the OID
@@ -1174,14 +1137,19 @@ int git_reference__update_terminal(
 {
 	git_reference *ref = NULL, *ref2 = NULL;
 	git_signature *who = NULL;
+	git_refdb *refdb = NULL;
 	const git_signature *to_use;
 	int error = 0;
 
 	if (!sig && (error = git_reference__log_signature(&who, repo)) < 0)
-		return error;
+		goto out;
 
 	to_use = sig ? sig : who;
-	error = get_terminal(&ref, repo, ref_name, 0);
+
+	if ((error = git_repository_refdb__weakptr(&refdb, repo)) < 0)
+		goto out;
+
+	error = git_refdb_resolve(&ref, refdb, ref_name, -1);
 
 	/* found a dangling symref */
 	if (error == GIT_ENOTFOUND && ref) {
@@ -1199,6 +1167,7 @@ int git_reference__update_terminal(
 					  log_message, &ref->target.oid, NULL);
 	}
 
+out:
 	git_reference_free(ref2);
 	git_reference_free(ref);
 	git_signature_free(who);
