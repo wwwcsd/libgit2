@@ -161,8 +161,15 @@ int git_refdb_resolve(
 
 		if (ref->type == GIT_REFERENCE_DIRECT)
 			break;
-		if ((error = git_refdb_lookup(&resolved, db, git_reference_symbolic_target(ref))) < 0)
+
+		if ((error = git_refdb_lookup(&resolved, db, git_reference_symbolic_target(ref))) < 0) {
+			/* If we found a symoblic reference with a nonexistent target, return it. */
+			if (error == GIT_ENOTFOUND) {
+				*out = ref;
+				ref = NULL;
+			}
 			goto out;
+		}
 
 		git_reference_free(ref);
 		ref = resolved;

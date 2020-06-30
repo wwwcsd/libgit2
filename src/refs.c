@@ -221,9 +221,16 @@ int git_reference_lookup_resolved(
 	assert(ref_out && repo && name);
 
 	if ((error = reference_normalize_for_repo(normalized, repo, name, true)) < 0 ||
-	    (error = git_repository_refdb__weakptr(&refdb, repo)) < 0 ||
-	    (error = git_refdb_resolve(ref_out, refdb, normalized, max_nesting)) < 0)
+	    (error = git_repository_refdb__weakptr(&refdb, repo)) < 0)
 		return error;
+
+	if ((error = git_refdb_resolve(ref_out, refdb, normalized, max_nesting)) < 0) {
+		if (*ref_out) {
+			git_reference_free(*ref_out);
+			*ref_out = NULL;
+		}
+		return error;
+	}
 
 	return 0;
 }
